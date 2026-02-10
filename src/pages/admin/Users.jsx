@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react'
+import ActionConfirmModal from '@/components/common/ActionConfirmModal'
+import { toast } from 'sonner'
 import {
   Search,
   Plus,
@@ -51,6 +53,12 @@ const Users = () => {
   const [selectedUser, setSelectedUser] = useState(null)
   const [isSheetOpen, setIsSheetOpen] = useState(false)
 
+  // Confirmation Modal State
+  const [deleteModal, setDeleteModal] = useState({
+    isOpen: false,
+    id: null
+  })
+
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(10)
@@ -70,8 +78,17 @@ const Users = () => {
 
   // Handlers
   const handleDelete = (id) => {
-    if (window.confirm('Are you sure you want to delete this user?')) {
-      setUsers(users.filter(user => user.id !== id))
+    setDeleteModal({ isOpen: true, id })
+  }
+
+  const handleConfirmDelete = () => {
+    if (deleteModal.id) {
+      const userToDelete = users.find(u => u.id === deleteModal.id)
+      setUsers(users.filter(user => user.id !== deleteModal.id))
+      setDeleteModal({ isOpen: false, id: null })
+      toast.success('User deleted successfully', {
+        description: `${userToDelete?.name} has been removed from the system.`
+      })
     }
   }
 
@@ -101,8 +118,14 @@ const Users = () => {
 
     if (selectedUser) {
       setUsers(users.map(u => u.id === selectedUser.id ? userData : u))
+      toast.success('User updated successfully', {
+        description: `${userData.name}'s profile has been updated.`
+      })
     } else {
       setUsers([...users, userData])
+      toast.success('User created successfully', {
+        description: `${userData.name} has been added as a new ${userData.role}.`
+      })
     }
     setIsSheetOpen(false)
   }
@@ -367,6 +390,15 @@ const Users = () => {
           </form>
         </SheetContent>
       </Sheet>
+
+      <ActionConfirmModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ ...deleteModal, isOpen: false })}
+        onConfirm={handleConfirmDelete}
+        title="Delete User?"
+        description="Are you sure you want to permanently delete this user account? This action will remove all their access and data immediately."
+        confirmText="Yes, Delete User"
+      />
     </div>
   )
 }

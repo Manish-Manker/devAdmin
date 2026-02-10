@@ -71,6 +71,8 @@ const generateReports = () => {
 }
 
 const INITIAL_REPORTS = generateReports()
+import ActionConfirmModal from '@/components/common/ActionConfirmModal'
+import { toast } from 'sonner'
 
 const ReportPost = () => {
     const [reports, setReports] = useState(INITIAL_REPORTS)
@@ -79,6 +81,7 @@ const ReportPost = () => {
     const [statusFilter, setStatusFilter] = useState('All')
     const [selectedReport, setSelectedReport] = useState(null)
     const [isSheetOpen, setIsSheetOpen] = useState(false)
+    const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null })
 
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1)
@@ -103,9 +106,17 @@ const ReportPost = () => {
     const paginatedReports = filteredReports.slice(startIndex, startIndex + itemsPerPage)
 
     const handleDeletePost = (id) => {
-        if (window.confirm('Are you sure you want to PERMANENTLY DELETE this post? This action will also resolve all associated reports.')) {
-            setReports(reports.filter(r => r.post.id !== id))
+        setDeleteModal({ isOpen: true, id })
+    }
+
+    const handleConfirmDelete = () => {
+        if (deleteModal.id) {
+            setReports(reports.filter(r => r.post.id !== deleteModal.id))
+            setDeleteModal({ isOpen: false, id: null })
             setIsSheetOpen(false)
+            toast.success('Post Deleted Permanently', {
+                description: 'The content and all associated reports have been purged.'
+            })
         }
     }
 
@@ -113,12 +124,18 @@ const ReportPost = () => {
         setReports(reports.map(r =>
             r.post.id === postId ? { ...r, post: { ...r.post, status: newStatus }, status: 'Resolved' } : r
         ))
+        toast.info(`Post ${newStatus}`, {
+            description: `The reported post has been marked as ${newStatus} and reports resolved.`
+        })
     }
 
     const handleUpdateReportStatus = (reportId, newStatus) => {
         setReports(reports.map(r =>
             r.id === reportId ? { ...r, status: newStatus } : r
         ))
+        toast.success(`Report ${newStatus}`, {
+            description: `The report status has been updated to ${newStatus}.`
+        })
     }
 
     return (
@@ -184,7 +201,7 @@ const ReportPost = () => {
                         >
                             {/* Status Ribbon */}
                             <div className={`absolute top-0 right-0 h-1 w-24 ${report.status === 'Pending' ? 'bg-amber-500' :
-                                    report.status === 'Resolved' ? 'bg-emerald-500' : 'bg-blue-500'
+                                report.status === 'Resolved' ? 'bg-emerald-500' : 'bg-blue-500'
                                 }`} />
 
                             <div className="flex flex-col lg:flex-row gap-6">
@@ -197,7 +214,7 @@ const ReportPost = () => {
                                                     {report.reportId}
                                                 </span>
                                                 <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded ${report.status === 'Pending' ? 'bg-amber-500/10 text-amber-600' :
-                                                        report.status === 'Resolved' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-blue-500/10 text-blue-600'
+                                                    report.status === 'Resolved' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-blue-500/10 text-blue-600'
                                                     }`}>
                                                     {report.status}
                                                 </span>
@@ -456,6 +473,14 @@ const ReportPost = () => {
                     )}
                 </SheetContent>
             </Sheet>
+            <ActionConfirmModal
+                isOpen={deleteModal.isOpen}
+                onClose={() => setDeleteModal({ ...deleteModal, isOpen: false })}
+                onConfirm={handleConfirmDelete}
+                title="Delete Post Permanently?"
+                description="Are you sure you want to PERMANENTLY DELETE this post? This action will also resolve all associated reports and cannot be undone."
+                confirmText="Yes, Delete Permanently"
+            />
         </div>
     )
 }

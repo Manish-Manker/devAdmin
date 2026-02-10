@@ -58,12 +58,21 @@ const generatePosts = () => {
 
 const INITIAL_POSTS = generatePosts()
 
+import ActionConfirmModal from '@/components/common/ActionConfirmModal'
+import { toast } from 'sonner'
+
 const Post = () => {
   const [posts, setPosts] = useState(INITIAL_POSTS)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
   const [selectedPost, setSelectedPost] = useState(null)
   const [isSheetOpen, setIsSheetOpen] = useState(false)
+
+  // Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    id: null
+  })
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1)
@@ -83,9 +92,18 @@ const Post = () => {
   const paginatedPosts = filteredPosts.slice(startIndex, startIndex + itemsPerPage)
 
   // Handlers
-  const handleDelete = (id) => {
-    if (window.confirm('Are you sure you want to delete this post? This action cannot be undone.')) {
-      setPosts(posts.filter(post => post.id !== id))
+  const handleDeleteClick = (id) => {
+    setConfirmModal({ isOpen: true, id })
+  }
+
+  const handleConfirmDelete = () => {
+    if (confirmModal.id) {
+      setPosts(posts.filter(post => post.id !== confirmModal.id))
+      setConfirmModal({ isOpen: false, id: null })
+      setIsSheetOpen(false)
+      toast.success('Post deleted permanently', {
+        description: 'The post and all its data have been removed.'
+      })
     }
   }
 
@@ -97,6 +115,9 @@ const Post = () => {
   const handleToggleStatus = (id, currentStatus) => {
     const newStatus = currentStatus === 'Published' ? 'Draft' : 'Published'
     setPosts(posts.map(post => post.id === id ? { ...post, status: newStatus } : post))
+    toast.success(`Post ${newStatus === 'Published' ? 'Published' : 'Moved to Draft'}`, {
+      description: `Post status has been updated to ${newStatus}.`
+    })
   }
 
   // Reset page when filter changes
@@ -160,10 +181,10 @@ const Post = () => {
                       <div className="flex flex-col gap-1.5">
                         <span className="font-bold text-foreground truncate block text-sm" title={post.title}>{post.title}</span>
                         <span className={`text-[10px] uppercase font-bold tracking-tighter px-2 py-0.5 rounded-md w-fit ${post.category === 'Technology' ? 'bg-blue-500/10 text-blue-500' :
-                            post.category === 'Lifestyle' ? 'bg-pink-500/10 text-pink-500' :
-                              post.category === 'Travel' ? 'bg-orange-500/10 text-orange-500' :
-                                post.category === 'Health' ? 'bg-green-500/10 text-green-500' :
-                                  'bg-purple-500/10 text-purple-500'
+                          post.category === 'Lifestyle' ? 'bg-pink-500/10 text-pink-500' :
+                            post.category === 'Travel' ? 'bg-orange-500/10 text-orange-500' :
+                              post.category === 'Health' ? 'bg-green-500/10 text-green-500' :
+                                'bg-purple-500/10 text-purple-500'
                           }`}>
                           {post.category}
                         </span>
@@ -179,10 +200,10 @@ const Post = () => {
                     </td>
                     <td className="px-6 py-4">
                       <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${post.status === 'Published'
-                          ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
-                          : post.status === 'Draft'
-                            ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
-                            : 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20'
+                        ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                        : post.status === 'Draft'
+                          ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                          : 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20'
                         }`}>
                         {post.status === 'Published' ? <CheckCircle2 className="w-3.5 h-3.5" /> :
                           post.status === 'Draft' ? <Clock className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
@@ -231,7 +252,7 @@ const Post = () => {
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             className="text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer"
-                            onClick={() => handleDelete(post.id)}
+                            onClick={() => handleDeleteClick(post.id)}
                           >
                             <Trash2 className="w-4 h-4 mr-2" /> Delete Permanently
                           </DropdownMenuItem>
@@ -338,10 +359,10 @@ const Post = () => {
                 <div className="absolute inset-0 bg-gradient-to-t from-background to-transparent" />
                 <div className="absolute bottom-6 left-6 right-6">
                   <div className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest w-fit shadow-lg mb-3 ${selectedPost.category === 'Technology' ? 'bg-blue-600 text-white' :
-                      selectedPost.category === 'Lifestyle' ? 'bg-pink-600 text-white' :
-                        selectedPost.category === 'Travel' ? 'bg-orange-600 text-white' :
-                          selectedPost.category === 'Health' ? 'bg-green-600 text-white' :
-                            'bg-purple-600 text-white'
+                    selectedPost.category === 'Lifestyle' ? 'bg-pink-600 text-white' :
+                      selectedPost.category === 'Travel' ? 'bg-orange-600 text-white' :
+                        selectedPost.category === 'Health' ? 'bg-green-600 text-white' :
+                          'bg-purple-600 text-white'
                     }`}>
                     {selectedPost.category}
                   </div>
@@ -367,8 +388,8 @@ const Post = () => {
                     </div>
                   </div>
                   <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border-2 ${selectedPost.status === 'Published' ? 'border-emerald-500/50 text-emerald-500 bg-emerald-500/5' :
-                      selectedPost.status === 'Draft' ? 'border-amber-500/50 text-amber-500 bg-amber-500/5' :
-                        'border-zinc-500/50 text-zinc-500 bg-zinc-500/5'
+                    selectedPost.status === 'Draft' ? 'border-amber-500/50 text-amber-500 bg-amber-500/5' :
+                      'border-zinc-500/50 text-zinc-500 bg-zinc-500/5'
                     }`}>
                     {selectedPost.status}
                   </div>
@@ -423,10 +444,7 @@ const Post = () => {
                   size="lg"
                   variant="destructive"
                   className="font-black text-[11px] uppercase tracking-widest px-6"
-                  onClick={() => {
-                    handleDelete(selectedPost.id)
-                    setIsSheetOpen(false)
-                  }}
+                  onClick={() => handleDeleteClick(selectedPost.id)}
                 >
                   Delete
                 </Button>
@@ -435,6 +453,14 @@ const Post = () => {
           )}
         </SheetContent>
       </Sheet>
+      <ActionConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+        onConfirm={handleConfirmDelete}
+        title="Delete Post?"
+        description="Are you sure you want to permanently delete this post? This action cannot be reversed and all associated data will be lost."
+        confirmText="Yes, Delete Post"
+      />
     </div>
   )
 }

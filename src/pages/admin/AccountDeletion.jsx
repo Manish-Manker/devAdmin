@@ -65,6 +65,8 @@ const generateDeletionRequests = () => {
 }
 
 const INITIAL_REQUESTS = generateDeletionRequests()
+import ActionConfirmModal from '@/components/common/ActionConfirmModal'
+import { toast } from 'sonner'
 
 const AccountDeletion = () => {
   const [requests, setRequests] = useState(INITIAL_REQUESTS)
@@ -73,6 +75,7 @@ const AccountDeletion = () => {
   const [statusFilter, setStatusFilter] = useState('Pending')
   const [selectedRequest, setSelectedRequest] = useState(null)
   const [isSheetOpen, setIsSheetOpen] = useState(false)
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null })
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1)
@@ -100,12 +103,24 @@ const AccountDeletion = () => {
     if (newStatus === 'Completed') {
       setIsSheetOpen(false)
     }
+    toast.info(`Request ${newStatus}`, {
+      description: `Target deletion request is now set to ${newStatus}.`
+    })
   }
 
   const handleDeleteUser = (id) => {
-    if (window.confirm('CRITICAL ACTION: This will permanently delete the user account and all associated data. This cannot be undone. Proceed?')) {
-      setRequests(requests.filter(r => r.id !== id))
+    setDeleteModal({ isOpen: true, id })
+  }
+
+  const handleConfirmDelete = () => {
+    if (deleteModal.id) {
+      setRequests(requests.filter(r => r.id !== deleteModal.id))
+      setDeleteModal({ isOpen: false, id: null })
       setIsSheetOpen(false)
+      toast.error('Data Purged Permanently', {
+        description: 'User account and all associated data have been destroyed.',
+        duration: 5000
+      })
     }
   }
 
@@ -203,9 +218,9 @@ const AccountDeletion = () => {
                     </td>
                     <td className="px-6 py-4">
                       <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${request.status === 'Pending' ? 'bg-amber-500/10 text-amber-600' :
-                          request.status === 'Processing' ? 'bg-blue-500/10 text-blue-600' :
-                            request.status === 'Completed' ? 'bg-emerald-500/10 text-emerald-600' :
-                              'bg-zinc-500/10 text-zinc-600'
+                        request.status === 'Processing' ? 'bg-blue-500/10 text-blue-600' :
+                          request.status === 'Completed' ? 'bg-emerald-500/10 text-emerald-600' :
+                            'bg-zinc-500/10 text-zinc-600'
                         }`}>
                         {request.status === 'Pending' ? <Clock className="w-3 h-3" /> :
                           request.status === 'Processing' ? <Database className="w-3 h-3 animate-pulse" /> :
@@ -367,6 +382,14 @@ const AccountDeletion = () => {
           )}
         </SheetContent>
       </Sheet>
+      <ActionConfirmModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ ...deleteModal, isOpen: false })}
+        onConfirm={handleConfirmDelete}
+        title="CRITICAL: Delete User?"
+        description="This will permanently delete the user account and all associated data. This action is absolute and cannot be undone. Do you wish to proceed?"
+        confirmText="Confirm Deletion"
+      />
     </div>
   )
 }

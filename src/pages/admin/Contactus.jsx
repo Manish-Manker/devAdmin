@@ -55,6 +55,8 @@ const generateContacts = () => {
 }
 
 const INITIAL_CONTACTS = generateContacts()
+import ActionConfirmModal from '@/components/common/ActionConfirmModal'
+import { toast } from 'sonner'
 
 const ContactUs = () => {
     const [contacts, setContacts] = useState(INITIAL_CONTACTS)
@@ -62,6 +64,7 @@ const ContactUs = () => {
     const [statusFilter, setStatusFilter] = useState('All')
     const [selectedContact, setSelectedContact] = useState(null)
     const [isSheetOpen, setIsSheetOpen] = useState(false)
+    const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null })
 
     // Pagination
     const [currentPage, setCurrentPage] = useState(1)
@@ -84,14 +87,27 @@ const ContactUs = () => {
     const paginatedContacts = filteredContacts.slice(startIndex, startIndex + itemsPerPage)
 
     const handleDelete = (id) => {
-        if (window.confirm('Delete this message?')) {
-            setContacts(contacts.filter(c => c.id !== id))
+        setDeleteModal({ isOpen: true, id })
+    }
+
+    const handleConfirmDelete = () => {
+        if (deleteModal.id) {
+            setContacts(contacts.filter(c => c.id !== deleteModal.id))
+            setDeleteModal({ isOpen: false, id: null })
             setIsSheetOpen(false)
+            toast.success('Message Deleted', {
+                description: 'The support inquiry has been removed.'
+            })
         }
     }
 
     const handleUpdateStatus = (id, newStatus) => {
         setContacts(contacts.map(c => c.id === id ? { ...c, status: newStatus } : c))
+        if (newStatus === 'Resolved') {
+            toast.success('Inquiry Resolved', {
+                description: 'The query has been marked as completed.'
+            })
+        }
     }
 
     const toggleStar = (id) => {
@@ -190,8 +206,8 @@ const ContactUs = () => {
                                         </td>
                                         <td className="px-6 py-4">
                                             <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${contact.status === 'Unread' ? 'bg-amber-500/10 text-amber-600' :
-                                                    contact.status === 'Read' ? 'bg-blue-500/10 text-blue-600' :
-                                                        'bg-emerald-500/10 text-emerald-600'
+                                                contact.status === 'Read' ? 'bg-blue-500/10 text-blue-600' :
+                                                    'bg-emerald-500/10 text-emerald-600'
                                                 }`}>
                                                 {contact.status === 'Unread' ? <Clock className="w-3 h-3" /> :
                                                     contact.status === 'Read' ? <MailOpen className="w-3 h-3" /> :
@@ -358,6 +374,14 @@ const ContactUs = () => {
                     )}
                 </SheetContent>
             </Sheet>
+            <ActionConfirmModal
+                isOpen={deleteModal.isOpen}
+                onClose={() => setDeleteModal({ ...deleteModal, isOpen: false })}
+                onConfirm={handleConfirmDelete}
+                title="Delete Message?"
+                description="Are you sure you want to delete this message? This action cannot be revoked."
+                confirmText="Yes, Delete"
+            />
         </div>
     )
 }

@@ -56,6 +56,8 @@ const generateWaitingList = () => {
 }
 
 const INITIAL_LIST = generateWaitingList()
+import ActionConfirmModal from '@/components/common/ActionConfirmModal'
+import { toast } from 'sonner'
 
 const WaitingList = () => {
     const [list, setList] = useState(INITIAL_LIST)
@@ -63,6 +65,7 @@ const WaitingList = () => {
     const [statusFilter, setStatusFilter] = useState('All')
     const [selectedUser, setSelectedUser] = useState(null)
     const [isSheetOpen, setIsSheetOpen] = useState(false)
+    const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null })
 
     // Pagination
     const [currentPage, setCurrentPage] = useState(1)
@@ -84,14 +87,26 @@ const WaitingList = () => {
     const paginatedList = filteredList.slice(startIndex, startIndex + itemsPerPage)
 
     const handleInvite = (id) => {
+        const user = list.find(item => item.id === id)
         setList(list.map(item => item.id === id ? { ...item, status: 'Invited' } : item))
-        // In a real app, you'd trigger an email here
+        toast.info('Invitation Sent', {
+            description: `An early access email has been sent to ${user?.email}.`
+        })
     }
 
     const handleDelete = (id) => {
-        if (window.confirm('Remove this person from the waiting list?')) {
-            setList(list.filter(item => item.id !== id))
+        setDeleteModal({ isOpen: true, id })
+    }
+
+    const handleConfirmDelete = () => {
+        if (deleteModal.id) {
+            const user = list.find(item => item.id === deleteModal.id)
+            setList(list.filter(item => item.id !== deleteModal.id))
+            setDeleteModal({ isOpen: false, id: null })
             setIsSheetOpen(false)
+            toast.success('User Removed', {
+                description: `${user?.name} was removed from the waiting list.`
+            })
         }
     }
 
@@ -225,7 +240,14 @@ const WaitingList = () => {
                                                     >
                                                         <Send className="w-4 h-4 mr-2 text-primary" /> Send Invitation
                                                     </DropdownMenuItem>
-                                                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setList(list.map(u => u.id === item.id ? { ...u, status: 'Joined' } : u)) }}>
+                                                    <DropdownMenuItem onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        const user = list.find(u => u.id === item.id)
+                                                        setList(list.map(u => u.id === item.id ? { ...u, status: 'Joined' } : u))
+                                                        toast.success('User Onboarded', {
+                                                            description: `${user?.name} has successfully joined the platform.`
+                                                        })
+                                                    }}>
                                                         <CheckCircle2 className="w-4 h-4 mr-2 text-emerald-500" /> Mark as Joined
                                                     </DropdownMenuItem>
                                                     <DropdownMenuSeparator />
@@ -365,6 +387,13 @@ const WaitingList = () => {
                     )}
                 </SheetContent>
             </Sheet>
+            <ActionConfirmModal
+                isOpen={deleteModal.isOpen}
+                onClose={() => setDeleteModal({ ...deleteModal, isOpen: false })}
+                onConfirm={handleConfirmDelete}
+                title="Remove from Waiting List?"
+                description="Are you sure you want to remove this user from the waiting list? This action cannot be undone."
+            />
         </div>
     )
 }
