@@ -20,10 +20,8 @@ export const ThemeProvider = ({ children }) => {
     useEffect(() => {
         const root = document.documentElement
 
-        // Remove both classes first
         root.classList.remove('light', 'dark')
 
-        // Add the current theme class
         root.classList.add(theme)
 
         // Save to localStorage

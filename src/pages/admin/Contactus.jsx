@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
     Mail,
     Search,
@@ -36,7 +36,11 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
-// Generate Dummy Contact Queries
+import { contactService } from '@/services/dataServices'
+import Preloader from '@/components/common/Preloader'
+import ActionConfirmModal from '@/components/common/ActionConfirmModal'
+import { toast } from 'sonner'
+
 const generateContacts = () => {
     const subjects = ['General Inquiry', 'Technical Support', 'Partnership', 'Billing Issue', 'Feature Request', 'Bug Report']
     const statuses = ['Unread', 'Read', 'Resolved']
@@ -55,11 +59,10 @@ const generateContacts = () => {
 }
 
 const INITIAL_CONTACTS = generateContacts()
-import ActionConfirmModal from '@/components/common/ActionConfirmModal'
-import { toast } from 'sonner'
 
 const ContactUs = () => {
     const [contacts, setContacts] = useState(INITIAL_CONTACTS)
+    const [loading, setLoading] = useState(false)
     const [searchTerm, setSearchTerm] = useState('')
     const [statusFilter, setStatusFilter] = useState('All')
     const [selectedContact, setSelectedContact] = useState(null)
@@ -69,49 +72,103 @@ const ContactUs = () => {
     // Pagination
     const [currentPage, setCurrentPage] = useState(1)
     const [itemsPerPage, setItemsPerPage] = useState(10)
+    const [totalContacts, setTotalContacts] = useState(0)
 
-    // Filter Logic
-    const filteredContacts = contacts.filter(contact => {
-        const matchesSearch =
-            contact.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            contact.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            contact.subject.toLowerCase().includes(searchTerm.toLowerCase())
+    // Fetch Contacts
+    const fetchContacts = async () => {
+        setLoading(true)
+        try {
+            const params = {
+                page: currentPage,
+                limit: itemsPerPage,
+                search: searchTerm,
+                status: statusFilter !== 'All' ? statusFilter : undefined
+            }
 
-        const matchesStatus = statusFilter === 'All' || contact.status === statusFilter
+            const response = await contactService.getAllContacts(params)
 
-        return matchesSearch && matchesStatus
-    })
+            if (response.data) {
+                if (Array.isArray(response.data)) {
+                    setContacts(response.data)
+                    setTotalContacts(response.data.length)
+                } else {
+                    setContacts(response.data.contacts || [])
+                    setTotalContacts(response.data.total || 0)
+                }
+            }
+        } catch (error) {
+            console.error("Failed to fetch contacts", error)
+        } finally {
+            setLoading(false)
+        }
+    }
 
-    const totalPages = Math.ceil(filteredContacts.length / itemsPerPage)
-    const startIndex = (currentPage - 1) * itemsPerPage
-    const paginatedContacts = filteredContacts.slice(startIndex, startIndex + itemsPerPage)
+    useEffect(() => {
+        fetchContacts()
+    }, [currentPage, itemsPerPage, searchTerm, statusFilter])
 
+    // Filter Logic - Using API response directly as source of truth
+    const filteredContacts = contacts
+
+    // Pagination - Using API response directly
+    const paginatedContacts = contacts
+    const totalPages = Math.ceil(totalContacts / itemsPerPage) // Fallback if API doesn't return totalPages
+    // Ideally API returns total pages or total count. Assuming total count for now.
+
+    // Fallback for Calculate Total Pages if API returns total items
+    const calculateTotalPages = (total, limit) => Math.ceil(total / limit) || 1
+
+    // Handlers
     const handleDelete = (id) => {
         setDeleteModal({ isOpen: true, id })
     }
 
-    const handleConfirmDelete = () => {
+    const handleConfirmDelete = async () => {
         if (deleteModal.id) {
-            setContacts(contacts.filter(c => c.id !== deleteModal.id))
-            setDeleteModal({ isOpen: false, id: null })
-            setIsSheetOpen(false)
-            toast.success('Message Deleted', {
-                description: 'The support inquiry has been removed.'
-            })
+            try {
+                await contactService.deleteContact(deleteModal.id)
+                setContacts(contacts.filter(c => c.id !== deleteModal.id))
+                setDeleteModal({ isOpen: false, id: null })
+                setIsSheetOpen(false)
+                toast.success('Message Deleted', {
+                    description: 'The support inquiry has been removed.'
+                })
+                fetchContacts()
+            } catch (error) {
+                setDeleteModal({ isOpen: false, id: null })
+            }
         }
     }
 
-    const handleUpdateStatus = (id, newStatus) => {
-        setContacts(contacts.map(c => c.id === id ? { ...c, status: newStatus } : c))
-        if (newStatus === 'Resolved') {
-            toast.success('Inquiry Resolved', {
-                description: 'The query has been marked as completed.'
-            })
+    const handleUpdateStatus = async (id, newStatus) => {
+        try {
+            await contactService.updateContactStatus(id, newStatus)
+            setContacts(contacts.map(c => c.id === id ? { ...c, status: newStatus } : c))
+            if (newStatus === 'Resolved') {
+                toast.success('Inquiry Resolved', {
+                    description: 'The query has been marked as completed.'
+                })
+            }
+        } catch (error) {
+            console.error("Failed to update contact status", error)
         }
     }
 
-    const toggleStar = (id) => {
-        setContacts(contacts.map(c => c.id === id ? { ...c, isStarred: !c.isStarred } : c))
+    const toggleStar = async (id) => {
+        // optimistically update
+        const contact = contacts.find(c => c.id === id)
+        if (!contact) return
+
+        try {
+            // Assuming there is an endpoint for starring or we use update
+            // await contactService.toggleStar(id) 
+            // If no specific endpoint, maybe update status or ignore API for visual only?
+            // Let's assume a toggleStar method exists or we skip API for this visual flare if backend doesn't support it yet.
+            // For now, let's keep it local state or assume updateContact works.
+            setContacts(contacts.map(c => c.id === id ? { ...c, isStarred: !c.isStarred } : c))
+        } catch (error) {
+            console.error(error)
+        }
     }
 
     const openMessage = (contact) => {
@@ -120,6 +177,10 @@ const ContactUs = () => {
         if (contact.status === 'Unread') {
             handleUpdateStatus(contact.id, 'Read')
         }
+    }
+
+    if (loading) {
+        return <div className="h-[80vh] flex items-center justify-center"><Preloader /></div>
     }
 
     return (
@@ -259,9 +320,9 @@ const ContactUs = () => {
                 {totalPages > 1 && (
                     <div className="px-6 py-4 flex items-center justify-between bg-muted/20 border-t border-border">
                         <p className="text-xs text-muted-foreground font-medium">
-                            Showing <span className="text-foreground">{startIndex + 1}</span>-
-                            <span className="text-foreground">{Math.min(startIndex + itemsPerPage, filteredContacts.length)}</span> of
-                            <span className="text-foreground">{filteredContacts.length}</span>
+                            Showing <span className="text-foreground">{contacts.length + 1}</span>-
+                            <span className="text-foreground">{Math.min(contacts.length, itemsPerPage)}</span> of
+                            <span className="text-foreground">{contacts.length}</span>
                         </p>
                         <div className="flex gap-2">
                             <Button

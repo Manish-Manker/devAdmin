@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   UserX,
   Search,
@@ -37,7 +37,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
-// Generate Dummy Deletion Requests
+import { deletionService } from '@/services/dataServices'
+import Preloader from '@/components/common/Preloader'
+import ActionConfirmModal from '@/components/common/ActionConfirmModal'
+import { toast } from 'sonner'
+
 const generateDeletionRequests = () => {
   const reasons = [
     'No longer using the platform',
@@ -63,13 +67,10 @@ const generateDeletionRequests = () => {
     description: "I've decided to move my workflow to a different tool and I want to ensure all my personal data and interaction history is completely removed from your servers as per GDPR requirements."
   }))
 }
-
 const INITIAL_REQUESTS = generateDeletionRequests()
-import ActionConfirmModal from '@/components/common/ActionConfirmModal'
-import { toast } from 'sonner'
-
 const AccountDeletion = () => {
   const [requests, setRequests] = useState(INITIAL_REQUESTS)
+  const [loading, setLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [typeFilter, setTypeFilter] = useState('All')
   const [statusFilter, setStatusFilter] = useState('Pending')
@@ -80,48 +81,90 @@ const AccountDeletion = () => {
   // Pagination
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(8)
+  const [totalRequests, setTotalRequests] = useState(0)
 
-  // Filter Logic
-  const filteredRequests = requests.filter(request => {
-    const matchesSearch =
-      request.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      request.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      request.requestId.toLowerCase().includes(searchTerm.toLowerCase())
+  // Fetch Requests
+  const fetchRequests = async () => {
+    setLoading(true)
+    try {
+      const params = {
+        page: currentPage,
+        limit: itemsPerPage,
+        search: searchTerm,
+        type: typeFilter !== 'All' ? typeFilter : undefined,
+        status: statusFilter !== 'All' ? statusFilter : undefined
+      }
 
-    const matchesType = typeFilter === 'All' || request.type === typeFilter
-    const matchesStatus = statusFilter === 'All' || request.status === statusFilter
+      const response = await deletionService.getAllRequests(params)
 
-    return matchesSearch && matchesType && matchesStatus
-  })
-
-  const totalPages = Math.ceil(filteredRequests.length / itemsPerPage)
-  const startIndex = (currentPage - 1) * itemsPerPage
-  const paginatedRequests = filteredRequests.slice(startIndex, startIndex + itemsPerPage)
-
-  const handleAction = (id, newStatus) => {
-    setRequests(requests.map(r => r.id === id ? { ...r, status: newStatus } : r))
-    if (newStatus === 'Completed') {
-      setIsSheetOpen(false)
+      if (response.data) {
+        if (Array.isArray(response.data)) {
+          setRequests(response.data)
+          setTotalRequests(response.data.length)
+        } else {
+          setRequests(response.data.requests || [])
+          setTotalRequests(response.data.total || 0)
+        }
+      }
+    } catch (error) {
+      console.error("Failed to fetch deletion requests", error)
+    } finally {
+      setLoading(false)
     }
-    toast.info(`Request ${newStatus}`, {
-      description: `Target deletion request is now set to ${newStatus}.`
-    })
+  }
+
+  useEffect(() => {
+    fetchRequests()
+  }, [currentPage, itemsPerPage, searchTerm, typeFilter, statusFilter])
+
+  // Filter Logic - Using API response
+  const filteredRequests = requests
+
+  const totalPages = Math.ceil(totalRequests / itemsPerPage) // Fallback or use API total
+  // Pagination - Using API response
+  const paginatedRequests = requests
+  // Assumes API handles pagination but strict client side safety:
+  // const paginatedRequests = requests.slice(0, itemsPerPage) // if API returns all
+
+  const handleAction = async (id, newStatus) => {
+    try {
+      await deletionService.updateRequestStatus(id, newStatus)
+      setRequests(requests.map(r => r.id === id ? { ...r, status: newStatus } : r))
+      if (newStatus === 'Completed') {
+        setIsSheetOpen(false)
+      }
+      toast.info(`Request ${newStatus}`, {
+        description: `Target deletion request is now set to ${newStatus}.`
+      })
+    } catch (error) {
+      console.error("Failed to update status", error)
+    }
   }
 
   const handleDeleteUser = (id) => {
     setDeleteModal({ isOpen: true, id })
   }
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (deleteModal.id) {
-      setRequests(requests.filter(r => r.id !== deleteModal.id))
-      setDeleteModal({ isOpen: false, id: null })
-      setIsSheetOpen(false)
-      toast.error('Data Purged Permanently', {
-        description: 'User account and all associated data have been destroyed.',
-        duration: 5000
-      })
+      try {
+        await deletionService.deleteUserAccount(deleteModal.id)
+        setRequests(requests.filter(r => r.id !== deleteModal.id))
+        setDeleteModal({ isOpen: false, id: null })
+        setIsSheetOpen(false)
+        toast.error('Data Purged Permanently', {
+          description: 'User account and all associated data have been destroyed.',
+          duration: 5000
+        })
+        fetchRequests()
+      } catch (error) {
+        setDeleteModal({ isOpen: false, id: null })
+      }
     }
+  }
+
+  if (loading) {
+    return <div className="h-[80vh] flex items-center justify-center"><Preloader /></div>
   }
 
   return (

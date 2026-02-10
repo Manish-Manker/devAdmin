@@ -3,7 +3,6 @@ import { Home, Users, Settings, LogOut, User, FileText, ShieldAlert, Mail, UserX
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useTheme } from '@/contexts/ThemeContext'
 import { Button } from '@/components/ui/button'
-import LogoutConfirmModal from './LogoutConfirmModal'
 
 import {
     Sidebar,
@@ -18,11 +17,15 @@ import {
     SidebarMenuButton,
 } from "@/components/ui/sidebar"
 
+import { useAuthStore } from '@/store/authStore'
+import ActionConfirmModal from './ActionConfirmModal'
+import { toast } from 'sonner'
+
 const AppSidebar = () => {
     const navigate = useNavigate()
     const location = useLocation()
     const { theme } = useTheme()
-    const userEmail = localStorage.getItem('user')
+    const { user, logout } = useAuthStore()
     const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false)
 
     const menuItems = [
@@ -37,8 +40,10 @@ const AppSidebar = () => {
     ]
 
     const handleLogout = () => {
-        localStorage.removeItem('token')
-        localStorage.removeItem('user')
+        logout()
+        toast.info('Logged out', {
+            description: 'You have been successfully logged out.'
+        })
         navigate('/login')
     }
 
@@ -63,8 +68,8 @@ const AppSidebar = () => {
                                                 asChild
                                                 isActive={isActive}
                                                 className={`transition-all duration-200 ${isActive
-                                                        ? "bg-primary text-primary-foreground font-bold shadow-sm"
-                                                        : "hover:bg-muted"
+                                                    ? "bg-primary text-primary-foreground font-bold shadow-sm"
+                                                    : "hover:bg-muted"
                                                     }`}
                                             >
                                                 <Link to={item.url}>
@@ -86,8 +91,8 @@ const AppSidebar = () => {
                                 <User className="w-4 h-4 text-primary" />
                             </div>
                             <div className="flex flex-col min-w-0">
-                                <span className="text-sm font-medium truncate">{userEmail}</span>
-                                <span className="text-[10px] text-muted-foreground">Administrator</span>
+                                <span className="text-sm font-medium truncate">{user?.name || user?.email || 'Guest'}</span>
+                                <span className="text-[10px] text-muted-foreground">{user?.role || 'Administrator'}</span>
                             </div>
                         </div>
                         <Button
@@ -103,10 +108,14 @@ const AppSidebar = () => {
                 </SidebarFooter>
             </Sidebar>
 
-            <LogoutConfirmModal
+            <ActionConfirmModal
                 isOpen={isLogoutModalOpen}
                 onClose={() => setIsLogoutModalOpen(false)}
                 onConfirm={handleLogout}
+                title="Sign Out?"
+                description="Are you sure you want to log out? You will need to sign in again to access the admin panel."
+                confirmText="Sign Out"
+                variant="destructive"
             />
         </>
     )

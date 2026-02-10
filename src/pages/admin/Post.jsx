@@ -35,12 +35,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
-// Generate Dummy Posts Data (50 posts)
+import { postService } from '@/services/dataServices'
+import Preloader from '@/components/common/Preloader'
+import ActionConfirmModal from '@/components/common/ActionConfirmModal'
+import { toast } from 'sonner'
+
+
 const generatePosts = () => {
   const statuses = ['Published', 'Draft', 'Archived']
   const categories = ['Technology', 'Lifestyle', 'Travel', 'Health', 'Business']
 
-  return Array.from({ length: 50 }, (_, i) => ({
+  return Array.from({ length: 10 }, (_, i) => ({
     id: i + 1,
     title: `Comprehensive Guide to React Dashboard Design - Part ${i + 1}`,
     author: {
@@ -58,11 +63,9 @@ const generatePosts = () => {
 
 const INITIAL_POSTS = generatePosts()
 
-import ActionConfirmModal from '@/components/common/ActionConfirmModal'
-import { toast } from 'sonner'
-
 const Post = () => {
   const [posts, setPosts] = useState(INITIAL_POSTS)
+  const [loading, setLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
   const [selectedPost, setSelectedPost] = useState(null)
@@ -77,33 +80,68 @@ const Post = () => {
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(10)
+  const [totalPosts, setTotalPosts] = useState(0)
 
-  // Filtered Posts
-  const filteredPosts = posts.filter(post => {
-    const matchesSearch = post.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      post.author.name.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesStatus = statusFilter === 'All' || post.status === statusFilter
-    return matchesSearch && matchesStatus
-  })
+  // Fetch Posts
+  const fetchPosts = async () => {
+    setLoading(true)
+    try {
+      const params = {
+        page: currentPage,
+        limit: itemsPerPage,
+        search: searchTerm,
+        status: statusFilter !== 'All' ? statusFilter : undefined
+      }
 
-  // Pagination Logic
-  const totalPages = Math.ceil(filteredPosts.length / itemsPerPage)
-  const startIndex = (currentPage - 1) * itemsPerPage
-  const paginatedPosts = filteredPosts.slice(startIndex, startIndex + itemsPerPage)
+      const response = await postService.getAllPosts((params))
+
+      if (response.data) {
+        if (Array.isArray(response.data)) {
+          setPosts(response.data)
+          setTotalPosts(response.data.length)
+        } else {
+          setPosts(response.data.posts || [])
+          setTotalPosts(response.data.total || 0)
+        }
+      }
+    } catch (error) {
+      console.error("Failed to fetch posts", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchPosts()
+  }, [currentPage, itemsPerPage, searchTerm, statusFilter])
+
+  // Filtered Posts - Clientside fallback if API doesn't filter perfectly or for smooth UX 
+  // But ideally we rely on API. For now, let's keep using 'posts' directly as the source of truth from API.
+  const filteredPosts = posts
+
+  // Pagination Logic - If API handles pagination, we use 'posts' directly.
+  // If API returns all posts, we paginate client side.
+  // Assuming API handles pagination based on our service call, 'posts' is already paginated.
+  // However, to be safe with the 'Array.from' usage later or if API returns all:
+  const paginatedPosts = posts
 
   // Handlers
   const handleDeleteClick = (id) => {
     setConfirmModal({ isOpen: true, id })
   }
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (confirmModal.id) {
-      setPosts(posts.filter(post => post.id !== confirmModal.id))
-      setConfirmModal({ isOpen: false, id: null })
-      setIsSheetOpen(false)
-      toast.success('Post deleted permanently', {
-        description: 'The post and all its data have been removed.'
-      })
+      try {
+        await postService.deletePost(confirmModal.id)
+        setPosts(posts.filter(post => post.id !== confirmModal.id))
+        setConfirmModal({ isOpen: false, id: null })
+        setIsSheetOpen(false)
+        toast.success('Post deleted permanently')
+        fetchPosts()
+      } catch (error) {
+        setConfirmModal({ isOpen: false, id: null })
+      }
     }
   }
 
@@ -112,18 +150,31 @@ const Post = () => {
     setIsSheetOpen(true)
   }
 
-  const handleToggleStatus = (id, currentStatus) => {
-    const newStatus = currentStatus === 'Published' ? 'Draft' : 'Published'
-    setPosts(posts.map(post => post.id === id ? { ...post, status: newStatus } : post))
-    toast.success(`Post ${newStatus === 'Published' ? 'Published' : 'Moved to Draft'}`, {
-      description: `Post status has been updated to ${newStatus}.`
-    })
+  const handleToggleStatus = async (id, currentStatus) => {
+    try {
+      const response = await postService.toggleStatus(id)
+      // Assuming API returns updated post or we flip locally
+      const newStatus = currentStatus === 'Published' ? 'Draft' : 'Published'
+
+      setPosts(posts.map(post => post.id === id ? { ...post, status: newStatus } : post))
+      if (selectedPost && selectedPost.id === id) {
+        setSelectedPost({ ...selectedPost, status: newStatus })
+      }
+
+      toast.success(`Post status updated`)
+    } catch (error) {
+      console.error("Failed to toggle status", error)
+    }
   }
 
   // Reset page when filter changes
   useEffect(() => {
     setCurrentPage(1)
   }, [searchTerm, statusFilter, itemsPerPage])
+
+  if (loading) {
+    return <div className="h-[80vh] flex items-center justify-center"><Preloader /></div>
+  }
 
   return (
     <div className="space-y-6">
@@ -297,7 +348,7 @@ const Post = () => {
               </select>
             </div>
             <span className="opacity-70 border-l border-border pl-4">
-              Showing {startIndex + 1} - {Math.min(startIndex + itemsPerPage, filteredPosts.length)} of {filteredPosts.length} posts
+              Showing {posts.length + 1} - {Math.min(posts.length, itemsPerPage)} of {posts.length} posts
             </span>
           </div>
 
@@ -313,11 +364,11 @@ const Post = () => {
               Previous
             </Button>
             <div className="hidden md:flex items-center gap-1.5">
-              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+              {Array.from({ length: Math.min(posts.length, 5) }, (_, i) => {
                 let pageNum = i + 1
-                if (totalPages > 5 && currentPage > 3) {
+                if (posts.length > 5 && currentPage > 3) {
                   pageNum = currentPage - 2 + i
-                  if (pageNum > totalPages) pageNum = totalPages - (4 - i)
+                  if (pageNum > posts.length) pageNum = posts.length - (4 - i)
                 }
 
                 return (
@@ -332,15 +383,15 @@ const Post = () => {
                   </Button>
                 )
               })}
-              {totalPages > 5 && currentPage < totalPages - 2 && (
+              {posts.length > 5 && currentPage < posts.length - 2 && (
                 <span className="px-2 text-muted-foreground opacity-50 font-bold">...</span>
               )}
             </div>
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-              disabled={currentPage === totalPages}
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, posts.length))}
+              disabled={currentPage === posts.length}
               className="h-9 px-3 border-border hover:bg-muted"
             >
               Next

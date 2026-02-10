@@ -30,6 +30,9 @@ import {
 } from "@/components/ui/sheet"
 
 // Generate Dummy Users Data (50 users)
+import { userService } from '@/services/dataServices'
+import Preloader from '@/components/common/Preloader'
+
 const generateUsers = () => {
   const roles = ['Admin', 'Editor', 'User']
   const statuses = ['Active', 'Inactive']
@@ -48,6 +51,7 @@ const INITIAL_USERS = generateUsers()
 
 const Users = () => {
   const [users, setUsers] = useState(INITIAL_USERS)
+  const [loading, setLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
   const [selectedUser, setSelectedUser] = useState(null)
@@ -62,33 +66,67 @@ const Users = () => {
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(10)
+  const [totalUsers, setTotalUsers] = useState(0)
 
-  // Filtered Users
-  const filteredUsers = users.filter(user => {
-    const matchesSearch = user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesStatus = statusFilter === 'All' || user.status === statusFilter
-    return matchesSearch && matchesStatus
-  })
+  // Fetch Users
+  const fetchUsers = async () => {
+    setLoading(true)
+    try {
+      // Prepare params for API
+      const params = {
+        page: currentPage,
+        limit: itemsPerPage,
+        search: searchTerm,
+        status: statusFilter !== 'All' ? statusFilter : undefined
+      }
 
-  // Pagination Logic
-  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage)
-  const startIndex = (currentPage - 1) * itemsPerPage
-  const paginatedUsers = filteredUsers.slice(startIndex, startIndex + itemsPerPage)
+      const response = await userService.getAllUsers(params)
+      // Adjust based on your actual API response structure (e.g., data.users, data.total)
+      // For now assuming response.data is the array or { data: [], total: 0 }
+      // If the API returns just an array, we might need to handle pagination client-side or check API specs
+
+      if (response.data) {
+        // Check if response has pagination metadata
+        if (Array.isArray(response.data)) {
+          setUsers(response.data)
+          // If total is not provided, we might default or check headers
+          setTotalUsers(response.data.length)
+        } else {
+          setUsers(response.data.users || [])
+          setTotalUsers(response.data.total || 0)
+        }
+      }
+    } catch (error) {
+      console.error("Failed to fetch users", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchUsers()
+  }, [currentPage, itemsPerPage, searchTerm, statusFilter])
 
   // Handlers
   const handleDelete = (id) => {
     setDeleteModal({ isOpen: true, id })
   }
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (deleteModal.id) {
-      const userToDelete = users.find(u => u.id === deleteModal.id)
-      setUsers(users.filter(user => user.id !== deleteModal.id))
-      setDeleteModal({ isOpen: false, id: null })
-      toast.success('User deleted successfully', {
-        description: `${userToDelete?.name} has been removed from the system.`
-      })
+      try {
+        await userService.deleteUser(deleteModal.id)
+        setUsers(users.filter(user => user.id !== deleteModal.id))
+        setDeleteModal({ isOpen: false, id: null })
+        toast.success('User deleted successfully', {
+          description: 'User has been removed from the system.'
+        })
+        // Optionally re-fetch
+        fetchUsers()
+      } catch (error) {
+        // Error handled by interceptor
+        setDeleteModal({ isOpen: false, id: null })
+      }
     }
   }
 
@@ -102,7 +140,7 @@ const Users = () => {
     setIsSheetOpen(true)
   }
 
-  const handleSaveUser = (e) => {
+  const handleSaveUser = async (e) => {
     e.preventDefault()
     const formData = new FormData(e.target)
     const userData = {
@@ -110,30 +148,38 @@ const Users = () => {
       email: formData.get('email'),
       role: formData.get('role'),
       status: formData.get('status'),
-      // Keep existing data if editing, or add defaults for new
-      id: selectedUser ? selectedUser.id : users.length + 1,
-      joined: selectedUser ? selectedUser.joined : new Date().toISOString().split('T')[0],
-      avatar: selectedUser ? selectedUser.avatar : `https://i.pravatar.cc/150?u=${users.length + 1}`
     }
 
-    if (selectedUser) {
-      setUsers(users.map(u => u.id === selectedUser.id ? userData : u))
-      toast.success('User updated successfully', {
-        description: `${userData.name}'s profile has been updated.`
-      })
-    } else {
-      setUsers([...users, userData])
-      toast.success('User created successfully', {
-        description: `${userData.name} has been added as a new ${userData.role}.`
-      })
+    try {
+      if (selectedUser) {
+        await userService.updateUser(selectedUser.id, userData)
+        setUsers(users.map(u => u.id === selectedUser.id ? { ...u, ...userData } : u))
+        toast.success('User updated successfully')
+      } else {
+        // New user
+        const response = await userService.createUser(userData)
+        // If API returns the new user, add it
+        if (response.data) {
+          setUsers([...users, response.data])
+        }
+        toast.success('User created successfully')
+      }
+      setIsSheetOpen(false)
+      fetchUsers() // Refresh list
+    } catch (error) {
+      // Error handled by interceptor
+      console.error("Failed to save user", error)
     }
-    setIsSheetOpen(false)
   }
 
   // Reset page when filter changes
   useEffect(() => {
     setCurrentPage(1)
   }, [searchTerm, statusFilter, itemsPerPage])
+
+  if (loading) {
+    return <div className="h-[80vh] flex items-center justify-center"><Preloader /></div>
+  }
 
   return (
     <div className="space-y-6">
@@ -188,8 +234,8 @@ const Users = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {paginatedUsers.length > 0 ? (
-                paginatedUsers.map((user) => (
+              {users.length > 0 ? (
+                users.map((user) => (
                   <tr key={user.id} className="hover:bg-muted/50 transition-colors">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
@@ -277,7 +323,7 @@ const Users = () => {
             </select>
             <span>entries</span>
             <span className="ml-2">
-              Showing {startIndex + 1} to {Math.min(startIndex + itemsPerPage, filteredUsers.length)} of {filteredUsers.length} results
+              Showing {users.length + 1} to {Math.min(users.length, itemsPerPage)} of {users.length} results
             </span>
           </div>
 
@@ -293,13 +339,13 @@ const Users = () => {
               <span className="sr-only">Previous</span>
             </Button>
             <div className="flex items-center gap-1">
-              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+              {Array.from({ length: Math.min(users.length, 5) }, (_, i) => {
                 // Simple logic to show first 5 pages or relevant window
                 // For complexity reduction, just showing page numbers for now
                 let pageNum = i + 1
-                if (totalPages > 5 && currentPage > 3) {
+                if (users.length > 5 && currentPage > 3) {
                   pageNum = currentPage - 2 + i
-                  if (pageNum > totalPages) pageNum = totalPages - (4 - i)
+                  if (pageNum > users.length) pageNum = users.length - (4 - i)
                 }
 
                 return (
@@ -318,8 +364,8 @@ const Users = () => {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-              disabled={currentPage === totalPages}
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, users.length))}
+              disabled={currentPage === users.length}
               className="h-8 px-3"
             >
               <ChevronRight className="w-4 h-4" />

@@ -37,7 +37,11 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
-// Generate Dummy Reported Posts Data
+import { reportService } from '@/services/dataServices'
+import Preloader from '@/components/common/Preloader'
+import ActionConfirmModal from '@/components/common/ActionConfirmModal'
+import { toast } from 'sonner'
+
 const generateReports = () => {
     const reasons = ['Inappropriate Content', 'Spam', 'Hate Speech', 'Harassment', 'False Information', 'Copyright Violation']
     const reportStatuses = ['Pending', 'Reviewed', 'Resolved', 'Dismissed']
@@ -71,11 +75,10 @@ const generateReports = () => {
 }
 
 const INITIAL_REPORTS = generateReports()
-import ActionConfirmModal from '@/components/common/ActionConfirmModal'
-import { toast } from 'sonner'
 
 const ReportPost = () => {
     const [reports, setReports] = useState(INITIAL_REPORTS)
+    const [loading, setLoading] = useState(false)
     const [searchTerm, setSearchTerm] = useState('')
     const [reasonFilter, setReasonFilter] = useState('All')
     const [statusFilter, setStatusFilter] = useState('All')
@@ -86,56 +89,110 @@ const ReportPost = () => {
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1)
     const [itemsPerPage, setItemsPerPage] = useState(8)
+    const [totalReports, setTotalReports] = useState(0)
 
-    // Filter Logic
-    const filteredReports = reports.filter(report => {
-        const matchesSearch =
-            report.post.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            report.owner.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            report.reporter.name.toLowerCase().includes(searchTerm.toLowerCase())
+    // Fetch Reports
+    const fetchReports = async () => {
+        setLoading(true)
+        try {
+            const params = {
+                page: currentPage,
+                limit: itemsPerPage,
+                search: searchTerm,
+                reason: reasonFilter !== 'All' ? reasonFilter : undefined,
+                status: statusFilter !== 'All' ? statusFilter : undefined
+            }
 
-        const matchesReason = reasonFilter === 'All' || report.reason === reasonFilter
-        const matchesStatus = statusFilter === 'All' || report.status === statusFilter
+            const response = await reportService.getAllReports(params)
 
-        return matchesSearch && matchesReason && matchesStatus
-    })
+            if (response.data) {
+                if (Array.isArray(response.data)) {
+                    setReports(response.data)
+                    setTotalReports(response.data.length)
+                } else {
+                    setReports(response.data.reports || [])
+                    setTotalReports(response.data.total || 0)
+                }
+            }
+        } catch (error) {
+            console.error("Failed to fetch reports", error)
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    useEffect(() => {
+        fetchReports()
+    }, [currentPage, itemsPerPage, searchTerm, reasonFilter, statusFilter])
+
+    // Filter Logic - Using API response directly as source of truth
+    const filteredReports = reports
 
     // Pagination Logic
-    const totalPages = Math.ceil(filteredReports.length / itemsPerPage)
-    const startIndex = (currentPage - 1) * itemsPerPage
-    const paginatedReports = filteredReports.slice(startIndex, startIndex + itemsPerPage)
+    // If API returns paginated data, we use 'reports' directly.
+    const paginatedReports = reports
 
+    // Handlers
     const handleDeletePost = (id) => {
         setDeleteModal({ isOpen: true, id })
     }
 
-    const handleConfirmDelete = () => {
+    const handleConfirmDelete = async () => {
         if (deleteModal.id) {
-            setReports(reports.filter(r => r.post.id !== deleteModal.id))
-            setDeleteModal({ isOpen: false, id: null })
-            setIsSheetOpen(false)
-            toast.success('Post Deleted Permanently', {
-                description: 'The content and all associated reports have been purged.'
-            })
+            try {
+                // Determine if we are deleting the report or the post. 
+                // The UI implies deleting the *post* permanently.
+                // Our service has deleteReportedPost (which deletes post) and deleteReport.
+                // Based on UI text "Delete Post Permanently", we should delete the post.
+                await reportService.deleteReportedPost(deleteModal.id)
+
+                setReports(reports.filter(r => r.post.id !== deleteModal.id))
+                setDeleteModal({ isOpen: false, id: null })
+                setIsSheetOpen(false)
+                toast.success('Post Deleted Permanently', {
+                    description: 'The content and all associated reports have been purged.'
+                })
+                fetchReports()
+            } catch (error) {
+                setDeleteModal({ isOpen: false, id: null })
+            }
         }
     }
 
-    const handleUpdatePostStatus = (postId, newStatus) => {
-        setReports(reports.map(r =>
-            r.post.id === postId ? { ...r, post: { ...r.post, status: newStatus }, status: 'Resolved' } : r
-        ))
-        toast.info(`Post ${newStatus}`, {
-            description: `The reported post has been marked as ${newStatus} and reports resolved.`
-        })
+    const handleUpdatePostStatus = async (postId, newStatus) => {
+        try {
+            await reportService.updatePostStatus(postId, newStatus)
+
+            setReports(reports.map(r =>
+                r.post.id === postId ? { ...r, post: { ...r.post, status: newStatus }, status: 'Resolved' } : r
+            ))
+            toast.info(`Post ${newStatus}`, {
+                description: `The reported post has been marked as ${newStatus} and reports resolved.`
+            })
+            fetchReports()
+        } catch (error) {
+            console.error("Failed to update post status", error)
+        }
     }
 
-    const handleUpdateReportStatus = (reportId, newStatus) => {
-        setReports(reports.map(r =>
-            r.id === reportId ? { ...r, status: newStatus } : r
-        ))
-        toast.success(`Report ${newStatus}`, {
-            description: `The report status has been updated to ${newStatus}.`
-        })
+    const handleUpdateReportStatus = async (reportId, newStatus) => {
+        try {
+            await reportService.updateReportStatus(reportId, newStatus)
+
+            setReports(reports.map(r =>
+                r.id === reportId ? { ...r, status: newStatus } : r
+            ))
+            toast.success(`Report ${newStatus}`, {
+                description: `The report status has been updated to ${newStatus}.`
+            })
+            // Optionally refresh
+        } catch (error) {
+            console.error("Failed to update report status", error)
+        }
+    }
+
+    if (loading) {
+        return <div className="h-[80vh] flex items-center justify-center"><Preloader /></div>
     }
 
     return (
@@ -318,10 +375,10 @@ const ReportPost = () => {
             </div>
 
             {/* Pagination */}
-            {totalPages > 1 && (
+            {reports.length > 1 && (
                 <div className="flex items-center justify-between py-4 border-t border-border">
                     <p className="text-sm font-medium text-muted-foreground">
-                        Showing <span className="text-foreground">{startIndex + 1}</span> to <span className="text-foreground">{Math.min(startIndex + itemsPerPage, filteredReports.length)}</span> of <span className="text-foreground">{filteredReports.length}</span> reports
+                        Showing <span className="text-foreground">{reports.length + 1}</span> to <span className="text-foreground">{Math.min(reports.length, itemsPerPage)}</span> of <span className="text-foreground">{reports.length}</span> reports
                     </p>
                     <div className="flex gap-2">
                         <Button
@@ -336,7 +393,7 @@ const ReportPost = () => {
                         <Button
                             variant="outline"
                             size="sm"
-                            disabled={currentPage === totalPages}
+                            disabled={currentPage === Math.ceil(reports.length / itemsPerPage)}
                             onClick={() => setCurrentPage(p => p + 1)}
                             className="font-bold"
                         >

@@ -36,7 +36,11 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
-// Generate Dummy Waiting List Data
+import { waitingListService } from '@/services/dataServices'
+import Preloader from '@/components/common/Preloader'
+import ActionConfirmModal from '@/components/common/ActionConfirmModal'
+import { toast } from 'sonner'
+
 const generateWaitingList = () => {
     const sources = ['Twitter', 'LinkedIn', 'Direct', 'Referral', 'Product Hunt', 'Newsletter']
     const statuses = ['Pending', 'Invited', 'Joined', 'Rejected']
@@ -56,11 +60,10 @@ const generateWaitingList = () => {
 }
 
 const INITIAL_LIST = generateWaitingList()
-import ActionConfirmModal from '@/components/common/ActionConfirmModal'
-import { toast } from 'sonner'
 
 const WaitingList = () => {
     const [list, setList] = useState(INITIAL_LIST)
+    const [loading, setLoading] = useState(false)
     const [searchTerm, setSearchTerm] = useState('')
     const [statusFilter, setStatusFilter] = useState('All')
     const [selectedUser, setSelectedUser] = useState(null)
@@ -70,43 +73,97 @@ const WaitingList = () => {
     // Pagination
     const [currentPage, setCurrentPage] = useState(1)
     const [itemsPerPage, setItemsPerPage] = useState(10)
+    const [totalEntries, setTotalEntries] = useState(0)
 
-    // Filter Logic
-    const filteredList = list.filter(item => {
-        const matchesSearch =
-            item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            item.email.toLowerCase().includes(searchTerm.toLowerCase())
+    // Fetch Waiting List
+    const fetchList = async () => {
+        setLoading(true)
+        try {
+            const params = {
+                page: currentPage,
+                limit: itemsPerPage,
+                search: searchTerm,
+                status: statusFilter !== 'All' ? statusFilter : undefined
+            }
 
-        const matchesStatus = statusFilter === 'All' || item.status === statusFilter
+            const response = await waitingListService.getAllEntries(params)
 
-        return matchesSearch && matchesStatus
-    })
+            if (response.data) {
+                if (Array.isArray(response.data)) {
+                    setList(response.data)
+                    setTotalEntries(response.data.length)
+                } else {
+                    setList(response.data.entries || [])
+                    setTotalEntries(response.data.total || 0)
+                }
+            }
+        } catch (error) {
+            console.error("Failed to fetch waiting list", error)
+        } finally {
+            setLoading(false)
+        }
+    }
 
-    const totalPages = Math.ceil(filteredList.length / itemsPerPage)
-    const startIndex = (currentPage - 1) * itemsPerPage
-    const paginatedList = filteredList.slice(startIndex, startIndex + itemsPerPage)
+    useEffect(() => {
+        fetchList()
+    }, [currentPage, itemsPerPage, searchTerm, statusFilter])
 
-    const handleInvite = (id) => {
-        const user = list.find(item => item.id === id)
-        setList(list.map(item => item.id === id ? { ...item, status: 'Invited' } : item))
-        toast.info('Invitation Sent', {
-            description: `An early access email has been sent to ${user?.email}.`
-        })
+    // Filter Logic - Using API response
+    const filteredList = list
+
+    // Pagination - Using API response
+    const paginatedList = list
+    const totalPages = Math.ceil(totalEntries / itemsPerPage) // Fallback or use API total
+    // API should handle pagination 
+
+    // Handlers
+    const handleInvite = async (id) => {
+        try {
+            await waitingListService.updateEntryStatus(id, 'Invited')
+            // Optimistic update
+            const user = list.find(item => item.id === id)
+            setList(list.map(item => item.id === id ? { ...item, status: 'Invited' } : item))
+            toast.info('Invitation Sent', {
+                description: `An early access email has been sent to ${user?.email}.`
+            })
+        } catch (error) {
+            console.error("Failed to invite user", error)
+        }
     }
 
     const handleDelete = (id) => {
         setDeleteModal({ isOpen: true, id })
     }
 
-    const handleConfirmDelete = () => {
+    const handleConfirmDelete = async () => {
         if (deleteModal.id) {
-            const user = list.find(item => item.id === deleteModal.id)
-            setList(list.filter(item => item.id !== deleteModal.id))
-            setDeleteModal({ isOpen: false, id: null })
-            setIsSheetOpen(false)
-            toast.success('User Removed', {
-                description: `${user?.name} was removed from the waiting list.`
+            try {
+                await waitingListService.deleteEntry(deleteModal.id)
+                const user = list.find(item => item.id === deleteModal.id)
+                setList(list.filter(item => item.id !== deleteModal.id))
+                setDeleteModal({ isOpen: false, id: null })
+                setIsSheetOpen(false)
+                toast.success('User Removed', {
+                    description: `${user?.name} was removed from the waiting list.`
+                })
+                fetchList()
+            } catch (error) {
+                setDeleteModal({ isOpen: false, id: null })
+            }
+        }
+    }
+
+    // Function to handle "Mark as Joined"
+    const handleMarkJoined = async (id) => {
+        try {
+            await waitingListService.updateEntryStatus(id, 'Joined')
+            const user = list.find(u => u.id === id)
+            setList(list.map(u => u.id === id ? { ...u, status: 'Joined' } : u))
+            toast.success('User Onboarded', {
+                description: `${user?.name} has successfully joined the platform.`
             })
+        } catch (error) {
+            console.error("Failed to update status", error)
         }
     }
 
